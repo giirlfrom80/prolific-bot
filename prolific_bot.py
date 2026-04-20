@@ -12,7 +12,7 @@ access_token = None
 def refresh_access_token():
     global access_token
     r = requests.post(
-        "https://auth.prolific.com/realms/prolific/protocol/openid-connect/token",
+        "https://auth.prolific.com/oauth/token",
         data={
             "grant_type": "refresh_token",
             "refresh_token": REFRESH_TOKEN,
