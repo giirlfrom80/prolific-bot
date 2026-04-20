@@ -4,7 +4,7 @@ import time
 TELEGRAM_TOKEN = "8626572170:AAG7BENnkyWYjKg-V7yAxwlVhqgYOVp4xvQ"
 CHAT_ID = "541545419"
 PROLIFIC_EMAIL = "m.dolgopolova.03@gmail.com"
-PROLIFIC_PASSWORD = "paRhiw-9zydfy-qibdis
+PROLIFIC_PASSWORD = """paRhiw-9zydfy-qibdis"""
 
 seen_ids = set()
 
