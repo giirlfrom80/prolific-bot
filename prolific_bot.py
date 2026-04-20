@@ -16,10 +16,12 @@ def get_studies():
     url = "https://internal-api.prolific.com/api/v1/studies/?status=ACTIVE"
     try:
         r = requests.get(url, headers=HEADERS, timeout=10)
+        print(f"Status: {r.status_code}")
+        print(f"Response: {r.text[:500]}")
         if r.status_code == 200:
             return r.json().get("results", [])
-    except:
-        pass
+    except Exception as e:
+        print(f"Error: {e}")
     return []
 
 def send_telegram(text):
