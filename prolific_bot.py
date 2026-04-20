@@ -13,7 +13,7 @@ HEADERS = {
 seen_ids = set()
 
 def get_studies():
-    url = "https://internal-api.prolific.com/api/v1/studies/?status=ACTIVE"
+    url = "https://internal-api.prolific.com/api/v1/participants/me/studies/?status=ACTIVE"
     try:
         r = requests.get(url, headers=HEADERS, timeout=10)
         print(f"Status: {r.status_code}")
