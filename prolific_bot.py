@@ -4,7 +4,7 @@ import time
 TELEGRAM_TOKEN = "8626572170:AAG7BENnkyWYjKg-V7yAxwlVhqgYOVp4xvQ"
 CHAT_ID = "541545419"
 CLIENT_ID = "pQJQs1EKM8T8C0BP5HlPclFc9Ynb97fP"
-REFRESH_TOKEN = "v1.MS-ThHKd2u7Y9k-AgcOGwqCJg5puDWFwonAfPzL-DerwKypGKI8Lk8L43Inc1oCHVr3kys-ncvudN6t8y1R_bzA"
+REFRESH_TOKEN = "v1.McRk8zc7DLLvEvxLwytxx_AlUSuHp1IOPoo7-yfe888uYcsGB22VTh9DRjsc8GlmbdJgJCJBy4vBOFmKDN-AZbM"
 
 seen_ids = set()
 access_token = None
