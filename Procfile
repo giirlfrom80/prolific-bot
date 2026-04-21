@@ -1,1 +1,1 @@
-worker: python prolific_bot.py
+web: python prolific_bot.py
