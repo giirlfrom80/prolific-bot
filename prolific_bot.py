@@ -104,6 +104,6 @@ while True:
             reward = study.get("reward", "?")
             duration = study.get("average_completion_time", "?")
             link = f"https://app.prolific.com/studies/{sid}"
-            msg = f"🟢 <b>Новое исследование!</b>\n\n{name}\n💰 {reward}p\n⏱ ~{duration} мин\n\n{link}"
+         msg = f"🟢 <b>Новое исследование!</b>\n\n{name}\n💰 £{reward/100:.2f}\n⏱ ~{duration} мин\n\n{link}"
             send_telegram(msg)
     time.sleep(20)
