@@ -4,7 +4,7 @@ import os
 import psycopg2
 import threading
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 TELEGRAM_TOKEN = "8626572170:AAG7BENnkyWYjKg-V7yAxwlVhqgYOVp4xvQ"
@@ -15,6 +15,7 @@ PORT = int(os.environ.get("PORT", 8080))
 
 seen_ids = set()
 access_token = None
+berlin = timezone(timedelta(hours=2))
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
@@ -95,8 +96,11 @@ def get_submissions():
     url = "https://internal-api.prolific.com/api/v1/participant/submissions/?ordering=-started_at&page_size=100"
     try:
         r = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+        print(f"Submissions status: {r.status_code}")
         if r.status_code == 200:
-            return r.json().get("results", [])
+            data = r.json()
+            print(f"Got {len(data.get('results', []))} submissions")
+            return data.get("results", [])
         elif r.status_code in (401, 403, 404):
             if refresh_access_token():
                 r2 = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
@@ -108,8 +112,9 @@ def get_submissions():
 
 def get_stats():
     submissions = get_submissions()
+    print(f"Processing {len(submissions)} submissions")
     rates = get_exchange_rates()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(berlin)
 
     today_eur = 0
     today_count = 0
@@ -127,13 +132,15 @@ def get_stats():
         completed = s.get("completed_at")
         if not completed:
             continue
-        dt = datetime.fromisoformat(completed.replace("Z", "+00:00"))
+        dt = datetime.fromisoformat(completed.replace("Z", "+00:00")).astimezone(berlin)
         reward = s.get("submission_reward", {})
         amount = reward.get("amount", 0) / 100
         currency = reward.get("currency", "GBP")
         rate = rates["GBP_TO_EUR"] if currency == "GBP" else rates["USD_TO_EUR"]
         eur = amount * rate
         time_taken = float(s.get("time_taken") or 0)
+
+        print(f"  {dt.date()} {s.get('status')} {currency} {amount} -> €{eur:.2f}")
 
         if dt.year == now.year and dt.month == now.month:
             month_eur += eur
@@ -158,6 +165,7 @@ def get_stats():
     msg += f"\n<i>Курс: £1 = €{rates['GBP_TO_EUR']:.2f}, $1 = €{rates['USD_TO_EUR']:.2f}</i>"
 
     return msg
+
 def get_studies():
     url = "https://internal-api.prolific.com/api/v1/participant/studies/?sortBy=published_at&orderBy=asc&status=ACTIVE"
     try:
