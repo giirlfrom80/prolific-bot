@@ -3,8 +3,9 @@ import time
 import os
 import psycopg2
 import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
 import json
+from datetime import datetime, timezone
+from http.server import HTTPServer, BaseHTTPRequestHandler
 
 TELEGRAM_TOKEN = "8626572170:AAG7BENnkyWYjKg-V7yAxwlVhqgYOVp4xvQ"
 CHAT_ID = "541545419"
@@ -77,6 +78,83 @@ def refresh_access_token():
         print(f"Refresh error: {r.status_code} {r.text}")
         return False
 
+def get_exchange_rates():
+    try:
+        r = requests.get("https://api.exchangerate-api.com/v4/latest/EUR", timeout=5)
+        if r.status_code == 200:
+            rates = r.json().get("rates", {})
+            return {
+                "GBP_TO_EUR": 1 / rates.get("GBP", 0.85),
+                "USD_TO_EUR": 1 / rates.get("USD", 1.08)
+            }
+    except:
+        pass
+    return {"GBP_TO_EUR": 1.18, "USD_TO_EUR": 0.93}
+
+def get_submissions():
+    url = "https://internal-api.prolific.com/api/v1/participant/submissions/?ordering=-started_at&page_size=100"
+    try:
+        r = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+        if r.status_code == 200:
+            return r.json().get("results", [])
+        elif r.status_code in (401, 403, 404):
+            if refresh_access_token():
+                r2 = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+                if r2.status_code == 200:
+                    return r2.json().get("results", [])
+    except Exception as e:
+        print(f"Error getting submissions: {e}")
+    return []
+
+def get_stats():
+    submissions = get_submissions()
+    rates = get_exchange_rates()
+    now = datetime.now(timezone.utc)
+
+    today_eur = 0
+    today_count = 0
+    month_eur = 0
+    month_count = 0
+    today_seconds = 0
+
+    for s in submissions:
+        if not s.get("is_complete") or s.get("status") == "TIMED-OUT":
+            continue
+        completed = s.get("completed_at")
+        if not completed:
+            continue
+        dt = datetime.fromisoformat(completed.replace("Z", "+00:00"))
+        reward = s.get("submission_reward", {})
+        amount = reward.get("amount", 0) / 100
+        currency = reward.get("currency", "GBP")
+        rate = rates["GBP_TO_EUR"] if currency == "GBP" else rates["USD_TO_EUR"]
+        eur = amount * rate
+        time_taken = float(s.get("time_taken") or 0)
+
+        if dt.year == now.year and dt.month == now.month:
+            month_eur += eur
+            month_count += 1
+            if dt.date() == now.date():
+                today_eur += eur
+                today_count += 1
+                today_seconds += time_taken
+
+    today_hours = today_seconds / 3600
+    hourly = (today_eur / today_hours) if today_hours > 0 else 0
+
+    msg = f"📊 <b>Статистика Prolific</b>\n\n"
+    msg += f"<b>Сегодня</b>\n"
+    msg += f"💶 Заработано: €{today_eur:.2f}\n"
+    msg += f"📋 Исследований: {today_count}\n"
+    if hourly > 0:
+        msg += f"⏱ Ставка: €{hourly:.2f}/час\n"
+    msg += f"\n<b>За месяц</b>\n"
+    msg += f"💶 Заработано: €{month_eur:.2f}\n"
+    msg += f"📋 Исследований: {month_count}\n"
+    msg += f"\n<i>Курс: £1 = €{rates['GBP_TO_EUR']:.2f}, $1 = €{rates['USD_TO_EUR']:.2f}</i>"
+
+    return msg
+
 def get_studies():
     url = "https://internal-api.prolific.com/api/v1/participant/studies/?sortBy=published_at&orderBy=asc&status=ACTIVE"
     try:
@@ -97,6 +175,25 @@ def get_studies():
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"})
+
+def check_telegram_commands():
+    offset = None
+    while True:
+        try:
+            params = {"timeout": 10}
+            if offset:
+                params["offset"] = offset
+            r = requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates", params=params, timeout=15)
+            if r.status_code == 200:
+                updates = r.json().get("result", [])
+                for update in updates:
+                    offset = update["update_id"] + 1
+                    msg = update.get("message", {}).get("text", "")
+                    if msg == "/stats":
+                        send_telegram(get_stats())
+        except Exception as e:
+            print(f"Telegram error: {e}")
+        time.sleep(2)
 
 HTML_PAGE = """<!DOCTYPE html>
 <html>
@@ -163,7 +260,6 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 def run_bot():
-    global access_token
     last_refresh = time.time()
     while True:
         if time.time() - last_refresh > 3000:
@@ -184,10 +280,10 @@ def run_bot():
 
 init_db()
 refresh_access_token()
-send_telegram("✅ Бот запущен!")
+send_telegram("✅ Бот запущен! Напиши /stats для статистики.")
 
-bot_thread = threading.Thread(target=run_bot, daemon=True)
-bot_thread.start()
+threading.Thread(target=run_bot, daemon=True).start()
+threading.Thread(target=check_telegram_commands, daemon=True).start()
 
 print(f"Starting web server on port {PORT}")
 HTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
