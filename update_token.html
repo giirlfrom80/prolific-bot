@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Update Prolific Token</title>
+    <style>
+        body { font-family: sans-serif; max-width: 400px; margin: 100px auto; text-align: center; }
+        button { padding: 15px 30px; font-size: 18px; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        #status { margin-top: 20px; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <h2>Prolific Bot Token Updater</h2>
+    <p>Открой эту страницу на app.prolific.com и нажми кнопку</p>
+    <button onclick="updateToken()">Обновить токен</button>
+    <div id="status"></div>
+
+    <script>
+        async function updateToken() {
+            const status = document.getElementById('status');
+            try {
+                const key = Object.keys(localStorage).find(k => k.startsWith('oidc.user:https://auth.prolific.com'));
+                if (!key) {
+                    status.innerHTML = '❌ Токен не найден. Убедись что ты залогинена на Prolific.';
+                    return;
+                }
+                const data = JSON.parse(localStorage.getItem(key));
+                const token = data.refresh_token;
+                if (!token) {
+                    status.innerHTML = '❌ Refresh token не найден.';
+                    return;
+                }
+                const resp = await fetch('https://твой-railway-url.up.railway.app/update_token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+                if (resp.ok) {
+                    status.innerHTML = '✅ Токен обновлён!';
+                } else {
+                    status.innerHTML = '❌ Ошибка при обновлении.';
+                }
+            } catch(e) {
+                status.innerHTML = '❌ Ошибка: ' + e.message;
+            }
+        }
+    </script>
+</body>
+</html>
