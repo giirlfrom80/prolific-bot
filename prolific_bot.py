@@ -117,8 +117,12 @@ def get_stats():
     month_count = 0
     today_seconds = 0
 
+    skip_statuses = {"TIMED-OUT", "RETURNED"}
+
     for s in submissions:
-        if not s.get("is_complete") or s.get("status") == "TIMED-OUT":
+        if s.get("status") in skip_statuses:
+            continue
+        if not s.get("is_complete"):
             continue
         completed = s.get("completed_at")
         if not completed:
@@ -154,7 +158,6 @@ def get_stats():
     msg += f"\n<i>Курс: £1 = €{rates['GBP_TO_EUR']:.2f}, $1 = €{rates['USD_TO_EUR']:.2f}</i>"
 
     return msg
-
 def get_studies():
     url = "https://internal-api.prolific.com/api/v1/participant/studies/?sortBy=published_at&orderBy=asc&status=ACTIVE"
     try:
