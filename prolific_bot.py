@@ -52,7 +52,7 @@ def refresh_access_token():
     refresh_token = load_refresh_token()
     if not refresh_token:
         print("No refresh token in DB")
-        return
+        return False
     r = requests.post(
         "https://auth.prolific.com/oauth/token",
         data={
@@ -68,16 +68,26 @@ def refresh_access_token():
         if new_refresh:
             save_refresh_token(new_refresh)
         print("Token refreshed OK")
+        return True
     else:
         print(f"Refresh error: {r.status_code} {r.text}")
+        return False
 
 def get_studies():
+    global access_token
     url = "https://internal-api.prolific.com/api/v1/participant/studies/?sortBy=published_at&orderBy=asc&status=ACTIVE"
     try:
         r = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
         print(f"Status: {r.status_code}")
         if r.status_code == 200:
             return r.json().get("results", [])
+        elif r.status_code in (401, 403, 404):
+            print("Token expired, refreshing...")
+            if refresh_access_token():
+                r2 = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+                print(f"Retry status: {r2.status_code}")
+                if r2.status_code == 200:
+                    return r2.json().get("results", [])
     except Exception as e:
         print(f"Error: {e}")
     return []
@@ -104,3 +114,6 @@ while True:
             reward = study.get("reward", 0)
             duration = study.get("average_completion_time", "?")
             link = f"https://app.prolific.com/studies/{sid}"
+            msg = f"🟢 <b>Новое исследование!</b>\n\n{name}\n💰 £{reward/100:.2f}\n⏱ ~{duration} мин\n\n{link}"
+            send_telegram(msg)
+    time.sleep(20)
