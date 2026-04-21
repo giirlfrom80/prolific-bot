@@ -2,11 +2,15 @@ import requests
 import time
 import os
 import psycopg2
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
 
 TELEGRAM_TOKEN = "8626572170:AAG7BENnkyWYjKg-V7yAxwlVhqgYOVp4xvQ"
 CHAT_ID = "541545419"
 CLIENT_ID = "pQJQs1EKM8T8C0BP5HlPclFc9Ynb97fP"
 DATABASE_URL = os.environ["DATABASE_URL"]
+PORT = int(os.environ.get("PORT", 8080))
 
 seen_ids = set()
 access_token = None
@@ -74,7 +78,6 @@ def refresh_access_token():
         return False
 
 def get_studies():
-    global access_token
     url = "https://internal-api.prolific.com/api/v1/participant/studies/?sortBy=published_at&orderBy=asc&status=ACTIVE"
     try:
         r = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
@@ -85,7 +88,6 @@ def get_studies():
             print("Token expired, refreshing...")
             if refresh_access_token():
                 r2 = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
-                print(f"Retry status: {r2.status_code}")
                 if r2.status_code == 200:
                     return r2.json().get("results", [])
     except Exception as e:
@@ -96,24 +98,96 @@ def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"})
 
+HTML_PAGE = """<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Prolific Token Updater</title>
+    <style>
+        body { font-family: sans-serif; max-width: 400px; margin: 100px auto; text-align: center; background: #f5f5f5; }
+        button { padding: 15px 30px; font-size: 18px; background: #4CAF50; color: white; border: none; border-radius: 8px; cursor: pointer; }
+        button:hover { background: #45a049; }
+        #status { margin-top: 20px; font-size: 16px; }
+    </style>
+</head>
+<body>
+    <h2>🤖 Prolific Bot</h2>
+    <p>Открой эту страницу находясь на app.prolific.com и нажми кнопку</p>
+    <button onclick="updateToken()">Обновить токен</button>
+    <div id="status"></div>
+    <script>
+        async function updateToken() {
+            const status = document.getElementById('status');
+            status.innerHTML = '⏳ Обновляю...';
+            try {
+                const key = Object.keys(localStorage).find(k => k.startsWith('oidc.user:https://auth.prolific.com'));
+                if (!key) { status.innerHTML = '❌ Не найден токен. Залогинься на Prolific.'; return; }
+                const data = JSON.parse(localStorage.getItem(key));
+                const token = data.refresh_token;
+                if (!token) { status.innerHTML = '❌ Refresh token не найден.'; return; }
+                const resp = await fetch('/update_token', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token })
+                });
+                if (resp.ok) { status.innerHTML = '✅ Токен обновлён! Бот снова работает.'; }
+                else { status.innerHTML = '❌ Ошибка при обновлении.'; }
+            } catch(e) { status.innerHTML = '❌ Ошибка: ' + e.message; }
+        }
+    </script>
+</body>
+</html>"""
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(HTML_PAGE.encode())
+
+    def do_POST(self):
+        if self.path == '/update_token':
+            length = int(self.headers['Content-Length'])
+            body = json.loads(self.rfile.read(length))
+            token = body.get('token')
+            if token:
+                save_refresh_token(token)
+                refresh_access_token()
+                send_telegram("🔄 Токен обновлён вручную через браузер!")
+                self.send_response(200)
+            else:
+                self.send_response(400)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
+def run_bot():
+    global access_token
+    last_refresh = time.time()
+    while True:
+        if time.time() - last_refresh > 3000:
+            refresh_access_token()
+            last_refresh = time.time()
+        studies = get_studies()
+        for study in studies:
+            sid = study.get("id")
+            if sid and sid not in seen_ids:
+                seen_ids.add(sid)
+                name = study.get("name", "Без названия")
+                reward = study.get("reward", 0)
+                duration = study.get("average_completion_time", "?")
+                link = f"https://app.prolific.com/studies/{sid}"
+                msg = f"🟢 <b>Новое исследование!</b>\n\n{name}\n💰 £{reward/100:.2f}\n⏱ ~{duration} мин\n\n{link}"
+                send_telegram(msg)
+        time.sleep(20)
+
 init_db()
 refresh_access_token()
-send_telegram("✅ Бот запущен! Слежу за новыми исследованиями на Prolific.")
-last_refresh = time.time()
+send_telegram("✅ Бот запущен!")
 
-while True:
-    if time.time() - last_refresh > 3000:
-        refresh_access_token()
-        last_refresh = time.time()
-    studies = get_studies()
-    for study in studies:
-        sid = study.get("id")
-        if sid and sid not in seen_ids:
-            seen_ids.add(sid)
-            name = study.get("name", "Без названия")
-            reward = study.get("reward", 0)
-            duration = study.get("average_completion_time", "?")
-            link = f"https://app.prolific.com/studies/{sid}"
-            msg = f"🟢 <b>Новое исследование!</b>\n\n{name}\n💰 £{reward/100:.2f}\n⏱ ~{duration} мин\n\n{link}"
-            send_telegram(msg)
-    time.sleep(20)
+bot_thread = threading.Thread(target=run_bot, daemon=True)
+bot_thread.start()
+
+print(f"Starting web server on port {PORT}")
+HTTPServer(('0.0.0.0', PORT), Handler).serve_forever()
