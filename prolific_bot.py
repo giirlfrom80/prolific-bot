@@ -103,4 +103,4 @@ while True:
             name = study.get("name", "Без названия")
             reward = study.get("reward", 0)
             duration = study.get("average_completion_time", "?")
-            link =
+            link = f"https://app.prolific.com/studies/{sid}"
