@@ -101,9 +101,6 @@ while True:
         if sid and sid not in seen_ids:
             seen_ids.add(sid)
             name = study.get("name", "Без названия")
-            reward = study.get("reward", "?")
+            reward = study.get("reward", 0)
             duration = study.get("average_completion_time", "?")
-            link = f"https://app.prolific.com/studies/{sid}"
-         msg = f"🟢 <b>Новое исследование!</b>\n\n{name}\n💰 £{reward/100:.2f}\n⏱ ~{duration} мин\n\n{link}"
-            send_telegram(msg)
-    time.sleep(20)
+            link =
