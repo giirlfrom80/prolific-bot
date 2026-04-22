@@ -16,6 +16,7 @@ PORT = int(os.environ.get("PORT", 8080))
 seen_ids = set()
 access_token = None
 berlin = timezone(timedelta(hours=2))
+last_token_warning = 0
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
@@ -57,12 +58,18 @@ def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"})
 
+def send_token_warning():
+    global last_token_warning
+    if time.time() - last_token_warning > 3600:
+        send_telegram("🔴 <b>ОБНОВИТЕ ТОКЕН</b>\n\nОткройте prolific-bot-production.up.railway.app на app.prolific.com и нажмите кнопку.")
+        last_token_warning = time.time()
+
 def refresh_access_token():
     global access_token
     refresh_token = load_refresh_token()
     if not refresh_token:
         print("No refresh token in DB")
-        send_telegram("🔴 <b>ОБНОВИТЕ ТОКЕН</b>\n\nОткройте prolific-bot-production.up.railway.app на app.prolific.com и нажмите кнопку.")
+        send_token_warning()
         return False
     r = requests.post(
         "https://auth.prolific.com/oauth/token",
@@ -82,7 +89,7 @@ def refresh_access_token():
         return True
     else:
         print(f"Refresh error: {r.status_code} {r.text}")
-        send_telegram("🔴 <b>ОБНОВИТЕ ТОКЕН</b>\n\nОткройте prolific-bot-production.up.railway.app на app.prolific.com и нажмите кнопку.")
+        send_token_warning()
         return False
 
 def get_exchange_rates():
