@@ -53,11 +53,16 @@ def save_refresh_token(token):
     cur.close()
     conn.close()
 
+def send_telegram(text):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"})
+
 def refresh_access_token():
     global access_token
     refresh_token = load_refresh_token()
     if not refresh_token:
         print("No refresh token in DB")
+        send_telegram("🔴 <b>ОБНОВИТЕ ТОКЕН</b>\n\nОткройте prolific-bot-production.up.railway.app на app.prolific.com и нажмите кнопку.")
         return False
     r = requests.post(
         "https://auth.prolific.com/oauth/token",
@@ -77,6 +82,7 @@ def refresh_access_token():
         return True
     else:
         print(f"Refresh error: {r.status_code} {r.text}")
+        send_telegram("🔴 <b>ОБНОВИТЕ ТОКЕН</b>\n\nОткройте prolific-bot-production.up.railway.app на app.prolific.com и нажмите кнопку.")
         return False
 
 def get_exchange_rates():
@@ -161,14 +167,14 @@ def get_stats():
     today_hours = today_seconds / 3600
     hourly = (today_eur / today_hours) if today_hours > 0 else 0
 
-    msg = f"📊 <b>Статистика Prolific</b>\n\n"
-    msg += f"<b>Сегодня</b>\n"
+    msg = "📊 <b>Статистика Prolific</b>\n\n"
+    msg += "<b>Сегодня</b>\n"
     msg += f"💶 Заработано: €{today_eur:.2f}\n"
     msg += f"📋 Исследований: {today_count}\n"
     msg += f"⏱ Время: {format_time(today_seconds)}\n"
     if hourly > 0:
         msg += f"💰 Ставка: €{hourly:.2f}/час\n"
-    msg += f"\n<b>За месяц</b>\n"
+    msg += "\n<b>За месяц</b>\n"
     msg += f"💶 Заработано: €{month_eur:.2f}\n"
     msg += f"📋 Исследований: {month_count}\n"
     msg += f"⏱ Время: {format_time(month_seconds)}\n"
@@ -192,10 +198,6 @@ def get_studies():
     except Exception as e:
         print(f"Error: {e}")
     return []
-
-def send_telegram(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML"})
 
 def check_telegram_commands():
     offset = None
@@ -236,21 +238,21 @@ HTML_PAGE = """<!DOCTYPE html>
     <script>
         async function updateToken() {
             const status = document.getElementById('status');
-            status.innerHTML = '⏳ Обновляю...';
+            status.innerHTML = '<b>⏳ Обновляю...</b>';
             try {
                 const key = Object.keys(localStorage).find(k => k.startsWith('oidc.user:https://auth.prolific.com'));
-                if (!key) { status.innerHTML = '❌ Не найден токен. Залогинься на Prolific.'; return; }
+                if (!key) { status.innerHTML = '<b>❌ Не найден токен. Залогинься на Prolific.</b>'; return; }
                 const data = JSON.parse(localStorage.getItem(key));
                 const token = data.refresh_token;
-                if (!token) { status.innerHTML = '❌ Refresh token не найден.'; return; }
+                if (!token) { status.innerHTML = '<b>❌ Refresh token не найден.</b>'; return; }
                 const resp = await fetch('/update_token', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ token })
                 });
-                if (resp.ok) { status.innerHTML = '✅ Токен обновлён! Бот снова работает.'; }
-                else { status.innerHTML = '❌ Ошибка при обновлении.'; }
-            } catch(e) { status.innerHTML = '❌ Ошибка: ' + e.message; }
+                if (resp.ok) { status.innerHTML = '<b>✅ Токен обновлён! Бот снова работает.</b>'; }
+                else { status.innerHTML = '<b>❌ Ошибка при обновлении.</b>'; }
+            } catch(e) { status.innerHTML = '<b>❌ Ошибка: ' + e.message + '</b>'; }
         }
     </script>
 </body>
