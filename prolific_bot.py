@@ -306,7 +306,7 @@ def run_bot():
                 link = f"https://app.prolific.com/studies/{sid}"
                 msg = f"🟢 <b>Новое исследование!</b>\n\n{name}\n💰 £{reward/100:.2f}\n⏱ ~{duration} мин\n\n{link}"
                 send_telegram(msg)
-        time.sleep(20)
+        time.sleep(10)
 
 init_db()
 refresh_access_token()
