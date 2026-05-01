@@ -61,7 +61,7 @@ def send_telegram(text):
 def send_token_warning():
     global last_token_warning
     if time.time() - last_token_warning > 3600:
-        send_telegram("🔴 <b>ОБНОВИТЕ ТОКЕН</b>\n\nОткройте prolific-bot-production.up.railway.app на app.prolific.com и нажмите кнопку.")
+        send_telegram("🔴 <b>ОБНОВИТЕ ТОКЕН</b>\n\nОткройте консоль на app.prolific.com, вставьте команду токен, скопируйте результат и отправьте боту:\n\n<code>/token ВАШ_ТОКЕН</code>")
         last_token_warning = time.time()
 
 def refresh_access_token():
@@ -105,23 +105,30 @@ def get_exchange_rates():
         pass
     return {"GBP_TO_EUR": 1.18, "USD_TO_EUR": 0.93}
 
-def get_submissions():
-    url = "https://internal-api.prolific.com/api/v1/participant/submissions/?ordering=-started_at&page_size=100"
-    try:
-        r = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
-        print(f"Submissions status: {r.status_code}")
-        if r.status_code == 200:
-            data = r.json()
-            print(f"Got {len(data.get('results', []))} submissions")
-            return data.get("results", [])
-        elif r.status_code in (401, 403, 404):
-            if refresh_access_token():
-                r2 = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
-                if r2.status_code == 200:
-                    return r2.json().get("results", [])
-    except Exception as e:
-        print(f"Error getting submissions: {e}")
-    return []
+def get_all_submissions():
+    all_results = []
+    page = 1
+    while True:
+        url = f"https://internal-api.prolific.com/api/v1/participant/submissions/?ordering=-started_at&page_size=100&page={page}"
+        try:
+            r = requests.get(url, headers={"Authorization": f"Bearer {access_token}"}, timeout=10)
+            if r.status_code == 200:
+                data = r.json()
+                results = data.get("results", [])
+                all_results.extend(results)
+                if not data.get("_links", {}).get("next", {}).get("href"):
+                    break
+                page += 1
+            elif r.status_code in (401, 403, 404):
+                if refresh_access_token():
+                    continue
+                break
+            else:
+                break
+        except Exception as e:
+            print(f"Error getting submissions: {e}")
+            break
+    return all_results
 
 def format_time(seconds):
     seconds = int(seconds)
@@ -132,7 +139,7 @@ def format_time(seconds):
     return f"{minutes}мин"
 
 def get_stats():
-    submissions = get_submissions()
+    submissions = get_all_submissions()
     print(f"Processing {len(submissions)} submissions")
     rates = get_exchange_rates()
     now = datetime.now(berlin)
@@ -143,6 +150,9 @@ def get_stats():
     month_eur = 0
     month_count = 0
     month_seconds = 0
+    total_eur = 0
+    total_count = 0
+    total_seconds = 0
 
     skip_statuses = {"TIMED-OUT", "RETURNED"}
 
@@ -162,6 +172,10 @@ def get_stats():
         eur = amount * rate
         time_taken = float(s.get("time_taken") or 0)
 
+        total_eur += eur
+        total_count += 1
+        total_seconds += time_taken
+
         if dt.year == now.year and dt.month == now.month:
             month_eur += eur
             month_count += 1
@@ -173,6 +187,8 @@ def get_stats():
 
     today_hours = today_seconds / 3600
     hourly = (today_eur / today_hours) if today_hours > 0 else 0
+    total_hours = total_seconds / 3600
+    total_hourly = (total_eur / total_hours) if total_hours > 0 else 0
 
     msg = "📊 <b>Статистика Prolific</b>\n\n"
     msg += "<b>Сегодня</b>\n"
@@ -185,6 +201,12 @@ def get_stats():
     msg += f"💶 Заработано: €{month_eur:.2f}\n"
     msg += f"📋 Исследований: {month_count}\n"
     msg += f"⏱ Время: {format_time(month_seconds)}\n"
+    msg += "\n<b>За всё время</b>\n"
+    msg += f"💶 Заработано: €{total_eur:.2f}\n"
+    msg += f"📋 Исследований: {total_count}\n"
+    msg += f"⏱ Время: {format_time(total_seconds)}\n"
+    if total_hourly > 0:
+        msg += f"💰 Средняя ставка: €{total_hourly:.2f}/час\n"
     msg += f"\n<i>Курс: £1 = €{rates['GBP_TO_EUR']:.2f}, $1 = €{rates['USD_TO_EUR']:.2f}</i>"
 
     return msg
@@ -218,9 +240,19 @@ def check_telegram_commands():
                 updates = r.json().get("result", [])
                 for update in updates:
                     offset = update["update_id"] + 1
-                    msg = update.get("message", {}).get("text", "")
-                    if msg == "/stats":
+                    text = update.get("message", {}).get("text", "")
+                    if text == "/stats":
                         send_telegram(get_stats())
+                    elif text.startswith("/token "):
+                        new_token = text[7:].strip()
+                        if new_token:
+                            save_refresh_token(new_token)
+                            if refresh_access_token():
+                                send_telegram("✅ Токен обновлён! Бот снова работает.")
+                            else:
+                                send_telegram("❌ Токен не подошёл, попробуй ещё раз.")
+                        else:
+                            send_telegram("❌ Токен пустой. Отправь: /token ВАШ_ТОКЕН")
         except Exception as e:
             print(f"Telegram error: {e}")
         time.sleep(2)
@@ -280,7 +312,7 @@ class Handler(BaseHTTPRequestHandler):
             if token:
                 save_refresh_token(token)
                 refresh_access_token()
-                send_telegram("🔄 Токен обновлён вручную через браузер!")
+                send_telegram("🔄 Токен обновлён через браузер!")
                 self.send_response(200)
             else:
                 self.send_response(400)
